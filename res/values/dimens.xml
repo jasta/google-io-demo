@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="ballRadius">5dp</dimen>
+    <dimen name="ballMinDeltaX">-6dp</dimen>
+    <dimen name="ballMaxDeltaX">6dp</dimen>
+    <dimen name="ballMinDeltaY">-2dp</dimen>
+    <dimen name="ballMaxDeltaY">2dp</dimen>
+</resources>
