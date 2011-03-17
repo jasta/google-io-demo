@@ -16,15 +16,26 @@ import java.util.Random;
 public class DrawThread extends Thread {
     private static final String TAG = DrawThread.class.getSimpleName();
 
-    private static final int PHYS_X_ACCEL_SEC = 12;
-    private static final int PHYS_Y_ACCEL_SEC = 12;
+    /*
+     * Ratios are relative to the ball radius, which will be computed
+     * dynamically to ensure that it fits ideally on all possible device
+     * resolutions (for instance, on a tablet). This looks like just nonsense
+     * though. I admit, it was an afterthought but no time to fix things now :)
+     */
+    private static final float PHYS_X_ACCEL_RATIO = (12f / 5f);
+    private static final float PHYS_Y_ACCEL_RATIO = (12f / 5f);
     private static final float PHYS_Y_FRICTION_SORT_OF = 0.90f;
-    private static final float PHYS_MIN_Y_ACCEL_AT_BOTTOM = 4f;
+    private static final float PHYS_MIN_Y_ACCEL_AT_BOTTOM_RATIO = (5f / 5f);
+    private static final float BALL_SPACING_RATIO = 0.6f;
+    private static final float DIGIT_SPACING_RATIO = 2.4f;
+    private static final float BALL_MIN_DELTA_X_RATIO = -(6f / 5f);
+    private static final float BALL_MAX_DELTA_X_RATIO = (6f / 5f);
+    private static final float BALL_MIN_DELTA_Y_RATIO = -(4f / 5f);
+    private static final float BALL_MAX_DELTA_Y_RATIO = (1f / 5f);
 
     private static final Random sRandom = new Random();
 
     private SurfaceHolder mSurfaceHolder;
-    private final Context mContext;
 
     /**
      * Array of all animating balls on screen (does not include the balls used
@@ -59,13 +70,18 @@ public class DrawThread extends Thread {
     private final Paint mGrayPaint;
 
     private final int mBackgroundColor;
-    private final float mDigitSpacing;
-    private final float mBallRadius;
-    private final float mBallSpacing;
-    private final float mBallMinDeltaX;
-    private final float mBallMaxDeltaX;
-    private final float mBallMinDeltaY;
-    private final float mBallMaxDeltaY;
+
+    /* The following are computed at runtime based on the device resolution. */
+    private float mDigitSpacing;
+    private float mBallRadius;
+    private float mBallSpacing;
+    private float mBallMinDeltaX;
+    private float mBallMaxDeltaX;
+    private float mBallMinDeltaY;
+    private float mBallMaxDeltaY;
+    private float mPhysXAccel;
+    private float mPhysYAccel;
+    private float mPhysMinYAccelAtBottom;
 
     /**
      * True if we our surface is valid and we can draw; false otherwise.
@@ -107,7 +123,6 @@ public class DrawThread extends Thread {
 
     public DrawThread(SurfaceHolder surfaceHolder, Context context) {
         mSurfaceHolder = surfaceHolder;
-        mContext = context;
 
         Resources res = context.getResources();
 
@@ -129,19 +144,13 @@ public class DrawThread extends Thread {
         mGrayPaint.setColor(res.getColor(R.color.gray));
 
         mBackgroundColor = res.getColor(R.color.background);
-        mDigitSpacing = res.getDimension(R.dimen.digitSpacing);
-        mBallRadius = res.getDimension(R.dimen.ballRadius);
-        mBallSpacing = res.getDimension(R.dimen.ballSpacing);
-        mBallMinDeltaX = res.getDimension(R.dimen.ballMinDeltaX);
-        mBallMaxDeltaX = res.getDimension(R.dimen.ballMaxDeltaX);
-        mBallMinDeltaY = res.getDimension(R.dimen.ballMinDeltaY);
-        mBallMaxDeltaY = res.getDimension(R.dimen.ballMaxDeltaY);
     }
 
     public void setSurfaceSize(int width, int height) {
         synchronized (mSurfaceHolder) {
             mCanvasWidth = width;
             mCanvasHeight = height;
+            computeBallRadiusAndSizings();
             positionClock();
         }
     }
@@ -197,6 +206,32 @@ public class DrawThread extends Thread {
                 }
             }
         }
+    }
+
+    /**
+     * Compute the pixel dimensions of some of our objects to ensure an ideal
+     * fit even on very large displays like tablets.
+     */
+    private void computeBallRadiusAndSizings() {
+        /*
+         * This math is likely impossible to read but it's the result of a
+         * formula I worked out trying to arrive at the same values I was using
+         * for testing on my Nexus One when adding the dynamic ball radius
+         * sizing. These are essentially those "golden ratios" that were tweaked
+         * by hand initially. The target value for mBallRadius on my N1 is 7.5px
+         * (5dp), which the below formula hits.
+         */
+        mBallRadius = (float)((mCanvasWidth * 0.96f) /
+                (16 * NumberFont.CONSTANT_WIDTH + 4.8 * (NumberFont.CONSTANT_WIDTH - 1) + 24));
+        mBallSpacing = mBallRadius * BALL_SPACING_RATIO;
+        mDigitSpacing = mBallRadius * DIGIT_SPACING_RATIO;
+        mBallMinDeltaX = mBallRadius * BALL_MIN_DELTA_X_RATIO;
+        mBallMaxDeltaX = mBallRadius * BALL_MAX_DELTA_X_RATIO;
+        mBallMinDeltaY = mBallRadius * BALL_MIN_DELTA_Y_RATIO;
+        mBallMaxDeltaY = mBallRadius * BALL_MAX_DELTA_Y_RATIO;
+        mPhysXAccel = mBallRadius * PHYS_X_ACCEL_RATIO;
+        mPhysYAccel = mBallRadius * PHYS_Y_ACCEL_RATIO;
+        mPhysMinYAccelAtBottom = mBallRadius * PHYS_MIN_Y_ACCEL_AT_BOTTOM_RATIO;
     }
 
     private void positionClock() {
@@ -312,6 +347,10 @@ public class DrawThread extends Thread {
             timeLeft = Constants.COUNTDOWN_TO_WHEN - now;
         }
 
+        if (mClockBalls.isEmpty()) {
+            positionClock();
+        }
+
         mCurrentCountdown.setTimeLeft(timeLeft);
 
         handleDigitChange(mDayDigits, mLastCountdown.days, mCurrentCountdown.days);
@@ -359,8 +398,8 @@ public class DrawThread extends Thread {
         float horizontalForce;
         if (mGData != null && mOrientation != null) {
             float pitch = mOrientation[1];
-            horizontalForce = (float)(PHYS_X_ACCEL_SEC * (float)Math.sin(-pitch) * mElapsed);
-            verticalForce = (float)(PHYS_Y_ACCEL_SEC * (float)Math.cos(-pitch) * mElapsed);
+            horizontalForce = (float)(mPhysXAccel * (float)Math.sin(-pitch) * mElapsed);
+            verticalForce = (float)(mPhysYAccel * (float)Math.cos(-pitch) * mElapsed);
 
             /*
              * The device must be upside down, invert the vertical force so we
@@ -371,7 +410,7 @@ public class DrawThread extends Thread {
             }
         } else {
             horizontalForce = 0f;
-            verticalForce = (float)(PHYS_Y_ACCEL_SEC * mElapsed);
+            verticalForce = (float)(mPhysYAccel * mElapsed);
         }
 
         int N = mAnimatingBalls.size();
@@ -386,10 +425,10 @@ public class DrawThread extends Thread {
             float dy = ball.dy + verticalForce;
             float posy = ball.y + dy;
             if ((posy > mCanvasHeight && dy > 0) || (posy < 0 && dy < 0)) {
-                if (dy > 0 && dy < PHYS_MIN_Y_ACCEL_AT_BOTTOM) {
-                    dy = PHYS_MIN_Y_ACCEL_AT_BOTTOM;
-                } if (dy < 0 && dy > -PHYS_MIN_Y_ACCEL_AT_BOTTOM) {
-                    dy = -PHYS_MIN_Y_ACCEL_AT_BOTTOM;
+                if (dy > 0 && dy < mPhysMinYAccelAtBottom) {
+                    dy = mPhysMinYAccelAtBottom;
+                } if (dy < 0 && dy > -mPhysMinYAccelAtBottom) {
+                    dy = -mPhysMinYAccelAtBottom;
                 }
                 dy *= -PHYS_Y_FRICTION_SORT_OF;
             }
@@ -410,8 +449,8 @@ public class DrawThread extends Thread {
                         continue;
                     }
                     Ball otherBall = mAnimatingBalls.get(j);
-                    if (otherBall.intersects(ball)) {
-                        /* ... */
+                    if (otherBall.colliding(ball)) {
+                        otherBall.resolveCollision(ball);
                     }
                 }
             }
@@ -448,7 +487,7 @@ public class DrawThread extends Thread {
          * object velocity to avoid missing detection when the objects would
          * intersect at interpolated values between now and the next frame.
          */
-        public boolean intersects(Ball ball) {
+        public boolean colliding(Ball ball) {
             float dvx = ball.dx - dx;
             float dvy = ball.dy - dy;
             float dpx = ball.x - x;
@@ -480,6 +519,36 @@ public class DrawThread extends Thread {
 
             float D = pv * pv - pp * vv;
             return D > 0;
+        }
+
+        /**
+         * Some vector maths to apply position and velocity changes after a
+         * collision has been detected.
+         */
+        public void resolveCollision(Ball ball) {
+            float dpx = x - ball.x;
+            float dpy = y - ball.y;
+            double d = Math.sqrt(dpx * dpx + dpy * dpy);
+            float mtdx = (float)(dpx * ((radius + ball.radius - d) / d));
+            float mtdy = (float)(dpy * ((radius + ball.radius - d) / d));
+            x += mtdx * 0.5f;
+            y += mtdy * 0.5f;
+            ball.x -= mtdx * 0.5f;
+            ball.y -= mtdy * 0.5f;
+            float ddx = dx - ball.dx;
+            float ddy = dy - ball.dy;
+            double mtdlen = Math.sqrt(mtdx * mtdx + mtdy * mtdy);
+            float normmtdx = (float)(mtdx / mtdlen);
+            float normmtdy = (float)(mtdy / mtdlen);
+            double dn = ddx * normmtdx + ddy * normmtdy;
+            if (dn > 0f) {
+                return;
+            }
+            float i = (float)-dn;
+            dx = normmtdx * i;
+            dy = normmtdy * i;
+            ball.dx -= normmtdx * i;
+            ball.dy -= normmtdy * i;
         }
 
         @Override
