@@ -9,5 +9,8 @@ public class MainActivity extends Activity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
+
+        /* I'll probably be needing this eventually... */
+        MainView mainView = (MainView)findViewById(R.id.main);
     }
 }
