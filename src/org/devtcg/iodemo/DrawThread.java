@@ -587,7 +587,8 @@ public class DrawThread extends Thread {
         /**
          * Bitmap of balls for each digit in the set.
          */
-        public final Ball[][][] bitmaps = new Ball[2][NumberFont.CONSTANT_WIDTH][NumberFont.CONSTANT_HEIGHT];
+        public final Ball[][][] bitmaps =
+                new Ball[2][NumberFont.CONSTANT_WIDTH][NumberFont.CONSTANT_HEIGHT];
 
         /**
          * Paint to use when the ball is "lit" (not gray).
