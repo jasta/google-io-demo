@@ -142,6 +142,7 @@ public class DrawThread extends Thread {
         synchronized (mSurfaceHolder) {
             mCanvasWidth = width;
             mCanvasHeight = height;
+            positionClock();
         }
     }
 
@@ -196,6 +197,44 @@ public class DrawThread extends Thread {
                 }
             }
         }
+    }
+
+    private void positionClock() {
+        /*
+         * Kinda lame to have to clear the balls and reallocate when really all
+         * we're doing is adjusting the x/y coordinates of them. Oh well, this
+         * simplifies the logic a bit.
+         */
+        mClockBalls.clear();
+
+        /* Initialize the positions of the static clock balls. */
+        if (mClockBalls.isEmpty()) {
+            float digitWidth = (mBallRadius * 2 * NumberFont.CONSTANT_WIDTH) +
+                    (mBallSpacing * (NumberFont.CONSTANT_WIDTH - 1));
+            float digitHeight = (mBallRadius * 2 * NumberFont.CONSTANT_HEIGHT) +
+                    (mBallSpacing * (NumberFont.CONSTANT_HEIGHT - 1));
+
+            float clockWidth = (digitWidth * 8) + (mDigitSpacing * 10);
+            float clockHeight = digitHeight;
+
+            float x = (mCanvasWidth - clockWidth) / 2f;
+            float y = (mCanvasHeight - clockHeight) / 2f;
+
+            createClockDigit(mClockBalls, mDayDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
+            createClockDigit(mClockBalls, mDayDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
+            createClockColon(mClockBalls, x, y); x += mDigitSpacing;
+            createClockDigit(mClockBalls, mHourDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
+            createClockDigit(mClockBalls, mHourDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
+            createClockColon(mClockBalls, x, y); x += mDigitSpacing;
+            createClockDigit(mClockBalls, mMinuteDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
+            createClockDigit(mClockBalls, mMinuteDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
+            createClockColon(mClockBalls, x, y); x += mDigitSpacing;
+            createClockDigit(mClockBalls, mSecondDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
+            createClockDigit(mClockBalls, mSecondDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
+        }
+
+        /* Reset this so that we trigger a full visual update. */
+        mLastCountdown.setTimeLeft(0);
     }
 
     @Override
@@ -271,32 +310,6 @@ public class DrawThread extends Thread {
             timeLeft = 0;
         } else {
             timeLeft = Constants.COUNTDOWN_TO_WHEN - now;
-        }
-
-        /* Initialize the positions of the static clock balls. */
-        if (mClockBalls.isEmpty()) {
-            float digitWidth = (mBallRadius * 2 * NumberFont.CONSTANT_WIDTH) +
-                    (mBallSpacing * (NumberFont.CONSTANT_WIDTH - 1));
-            float digitHeight = (mBallRadius * 2 * NumberFont.CONSTANT_HEIGHT) +
-                    (mBallSpacing * (NumberFont.CONSTANT_HEIGHT - 1));
-
-            float clockWidth = (digitWidth * 8) + (mDigitSpacing * 10);
-            float clockHeight = digitHeight;
-
-            float x = (mCanvasWidth - clockWidth) / 2f;
-            float y = (mCanvasHeight - clockHeight) / 2f;
-
-            createClockDigit(mClockBalls, mDayDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
-            createClockDigit(mClockBalls, mDayDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
-            createClockColon(mClockBalls, x, y); x += mDigitSpacing;
-            createClockDigit(mClockBalls, mHourDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
-            createClockDigit(mClockBalls, mHourDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
-            createClockColon(mClockBalls, x, y); x += mDigitSpacing;
-            createClockDigit(mClockBalls, mMinuteDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
-            createClockDigit(mClockBalls, mMinuteDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
-            createClockColon(mClockBalls, x, y); x += mDigitSpacing;
-            createClockDigit(mClockBalls, mSecondDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
-            createClockDigit(mClockBalls, mSecondDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
         }
 
         mCurrentCountdown.setTimeLeft(timeLeft);
