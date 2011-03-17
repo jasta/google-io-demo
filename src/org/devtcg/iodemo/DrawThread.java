@@ -5,9 +5,8 @@ import org.devtcg.iodemo.NumberFont.Glyph;
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Paint.Style;
+import android.hardware.SensorManager;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
@@ -20,8 +19,9 @@ public class DrawThread extends Thread {
 
     private static final boolean DEBUG_DRAW_BALL_ID = Constants.DEBUG && false;
 
+    private static final int PHYS_X_ACCEL_SEC = 8;
     private static final int PHYS_Y_ACCEL_SEC = 8;
-    private static final float PHYS_FRICTION_SORT_OF = 0.90f;
+    private static final float PHYS_Y_FRICTION_SORT_OF = 0.90f;
     private static final float PHYS_MIN_Y_ACCEL_AT_BOTTOM = 4f;
 
     private static final Random sRandom = new Random();
@@ -69,6 +69,13 @@ public class DrawThread extends Thread {
     private int mCanvasHeight;
 
     /**
+     * Holds the yaw, pitch, and roll of the device collected from the MainView
+     * sensors.
+     */
+    private float[] mGData;
+    private float[] mOrientation;
+
+    /**
      * Time that the last draw frame occurred (in milliseconds).
      */
     private long mLastDraw;
@@ -78,6 +85,15 @@ public class DrawThread extends Thread {
      * elapsed since the previous draw event.
      */
     private double mElapsed;
+
+    /*
+     * Record the previous times so that if they change we can animate the
+     * bouncing balls.
+     */
+    private int mLastDay;
+    private int mLastHour;
+    private int mLastMinute;
+    private int mLastSecond;
 
     public DrawThread(SurfaceHolder surfaceHolder, Context context) {
         mSurfaceHolder = surfaceHolder;
@@ -112,6 +128,13 @@ public class DrawThread extends Thread {
         synchronized (mSurfaceHolder) {
             mCanvasWidth = width;
             mCanvasHeight = height;
+        }
+    }
+
+    public void setSensorData(float[] gData, float[] orientation) {
+        synchronized (mSurfaceHolder) {
+            mGData = gData;
+            mOrientation = orientation;
         }
     }
 
@@ -252,21 +275,46 @@ public class DrawThread extends Thread {
     }
 
     private void updatePhysics() {
+        float verticalForce;
+        float horizontalForce;
+        if (mGData != null && mOrientation != null) {
+            float pitch = mOrientation[1];
+            horizontalForce = (float)(PHYS_X_ACCEL_SEC * (float)Math.sin(-pitch) * mElapsed);
+            verticalForce = (float)(PHYS_Y_ACCEL_SEC * (float)Math.cos(-pitch) * mElapsed);
+
+            /*
+             * The device must be upside down, invert the vertical force so we
+             * "drop" toward the ceiling.
+             */
+            if (mGData[0] < 0) {
+                verticalForce *= -1;
+            }
+        } else {
+            horizontalForce = 0f;
+            verticalForce = (float)(PHYS_Y_ACCEL_SEC * mElapsed);
+        }
+
         int N = mBalls.size();
         for (int i = 0; i < N; i++) {
             Ball ball = mBalls.get(i);
 
-            /* Reposition and apply acceleration. */
-            float dy = ball.dy + (float)(PHYS_Y_ACCEL_SEC * mElapsed);
+            /* Apply the device pitch (as an accelerating force). */
+            float dx = ball.dx + horizontalForce;
+            ball.dx = dx;
+
+            /* Apply vertical acceleration. */
+            float dy = ball.dy + verticalForce;
             float posy = ball.y + dy;
             if (posy > mCanvasHeight && dy > 0) {
                 if (dy < PHYS_MIN_Y_ACCEL_AT_BOTTOM) {
                     dy = PHYS_MIN_Y_ACCEL_AT_BOTTOM;
                 }
-                dy *= -PHYS_FRICTION_SORT_OF;
+                dy *= -PHYS_Y_FRICTION_SORT_OF;
             }
             ball.dy = dy;
-            ball.x += ball.dx;
+
+            /* Reposition. */
+            ball.x += dx;
             ball.y = posy;
 
             /* Prune. */
