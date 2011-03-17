@@ -16,8 +16,8 @@ import java.util.Random;
 public class DrawThread extends Thread {
     private static final String TAG = DrawThread.class.getSimpleName();
 
-    private static final int PHYS_X_ACCEL_SEC = 8;
-    private static final int PHYS_Y_ACCEL_SEC = 8;
+    private static final int PHYS_X_ACCEL_SEC = 12;
+    private static final int PHYS_Y_ACCEL_SEC = 12;
     private static final float PHYS_Y_FRICTION_SORT_OF = 0.90f;
     private static final float PHYS_MIN_Y_ACCEL_AT_BOTTOM = 4f;
 
