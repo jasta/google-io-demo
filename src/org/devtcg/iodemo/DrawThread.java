@@ -545,8 +545,8 @@ public class DrawThread extends Thread {
                 return;
             }
             float i = (float)-dn;
-            dx = normmtdx * i;
-            dy = normmtdy * i;
+            dx += normmtdx * i;
+            dy += normmtdy * i;
             ball.dx -= normmtdx * i;
             ball.dy -= normmtdy * i;
         }
