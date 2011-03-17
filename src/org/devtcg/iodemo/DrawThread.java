@@ -6,7 +6,6 @@ import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.util.Log;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 
@@ -243,33 +242,31 @@ public class DrawThread extends Thread {
         mClockBalls.clear();
 
         /* Initialize the positions of the static clock balls. */
-        if (mClockBalls.isEmpty()) {
-            float digitWidth = (mBallRadius * 2 * NumberFont.CONSTANT_WIDTH) +
-                    (mBallSpacing * (NumberFont.CONSTANT_WIDTH - 1));
-            float digitHeight = (mBallRadius * 2 * NumberFont.CONSTANT_HEIGHT) +
-                    (mBallSpacing * (NumberFont.CONSTANT_HEIGHT - 1));
+        float digitWidth = (mBallRadius * 2 * NumberFont.CONSTANT_WIDTH) +
+        (mBallSpacing * (NumberFont.CONSTANT_WIDTH - 1));
+        float digitHeight = (mBallRadius * 2 * NumberFont.CONSTANT_HEIGHT) +
+        (mBallSpacing * (NumberFont.CONSTANT_HEIGHT - 1));
 
-            float clockWidth = (digitWidth * 8) + (mDigitSpacing * 10);
-            float clockHeight = digitHeight;
+        float clockWidth = (digitWidth * 8) + (mDigitSpacing * 10);
+        float clockHeight = digitHeight;
 
-            float x = (mCanvasWidth - clockWidth) / 2f;
-            float y = (mCanvasHeight - clockHeight) / 2f;
+        float x = (mCanvasWidth - clockWidth) / 2f;
+        float y = (mCanvasHeight - clockHeight) / 2f;
 
-            createClockDigit(mClockBalls, mDayDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
-            createClockDigit(mClockBalls, mDayDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
-            createClockColon(mClockBalls, x, y); x += mDigitSpacing;
-            createClockDigit(mClockBalls, mHourDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
-            createClockDigit(mClockBalls, mHourDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
-            createClockColon(mClockBalls, x, y); x += mDigitSpacing;
-            createClockDigit(mClockBalls, mMinuteDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
-            createClockDigit(mClockBalls, mMinuteDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
-            createClockColon(mClockBalls, x, y); x += mDigitSpacing;
-            createClockDigit(mClockBalls, mSecondDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
-            createClockDigit(mClockBalls, mSecondDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
-        }
+        createClockDigit(mClockBalls, mDayDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
+        createClockDigit(mClockBalls, mDayDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
+        createClockColon(mClockBalls, x, y); x += mDigitSpacing;
+        createClockDigit(mClockBalls, mHourDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
+        createClockDigit(mClockBalls, mHourDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
+        createClockColon(mClockBalls, x, y); x += mDigitSpacing;
+        createClockDigit(mClockBalls, mMinuteDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
+        createClockDigit(mClockBalls, mMinuteDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
+        createClockColon(mClockBalls, x, y); x += mDigitSpacing;
+        createClockDigit(mClockBalls, mSecondDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
+        createClockDigit(mClockBalls, mSecondDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
 
         /* Reset this so that we trigger a full visual update. */
-        mLastCountdown.setTimeLeft(0);
+        mLastCountdown.reset();
     }
 
     @Override
@@ -341,7 +338,10 @@ public class DrawThread extends Thread {
     private void handleClock(Canvas canvas, long now) {
         long timeLeft;
         if (now >= Constants.COUNTDOWN_TO_WHEN) {
-            Log.d(TAG, "Go to I/O, it's happening RIGHT NOW!");
+            /*
+             * At first I thought something cool should happen when I/O begins.
+             * But no, you should put your phone away and enjoy the event :)
+             */
             timeLeft = 0;
         } else {
             timeLeft = Constants.COUNTDOWN_TO_WHEN - now;
@@ -564,6 +564,10 @@ public class DrawThread extends Thread {
         public int minutes;
         public int seconds;
 
+        public CountdownClock() {
+            reset();
+        }
+
         public void setTimeLeft(long timeLeft) {
             timeLeft /= 1000;
             seconds = (int)(timeLeft % 60);
@@ -580,6 +584,13 @@ public class DrawThread extends Thread {
             hours = source.hours;
             minutes = source.minutes;
             seconds = source.seconds;
+        }
+
+        public void reset() {
+            days = -1;
+            hours = -1;
+            minutes = -1;
+            seconds = -1;
         }
     }
 
