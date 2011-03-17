@@ -6,7 +6,6 @@ import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.hardware.SensorManager;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
@@ -17,19 +16,12 @@ import java.util.Random;
 public class DrawThread extends Thread {
     private static final String TAG = DrawThread.class.getSimpleName();
 
-    private static final boolean DEBUG_DRAW_BALL_ID = Constants.DEBUG && false;
-
     private static final int PHYS_X_ACCEL_SEC = 8;
     private static final int PHYS_Y_ACCEL_SEC = 8;
     private static final float PHYS_Y_FRICTION_SORT_OF = 0.90f;
     private static final float PHYS_MIN_Y_ACCEL_AT_BOTTOM = 4f;
 
     private static final Random sRandom = new Random();
-
-    /**
-     * Incremeneted and assigned to each ball for debug purposes.
-     */
-    public int mNextBallId = 0;
 
     private SurfaceHolder mSurfaceHolder;
     private final Context mContext;
@@ -38,11 +30,32 @@ public class DrawThread extends Thread {
      * Array of all animating balls on screen (does not include the balls used
      * to draw the clock).
      */
-    private final ArrayList<Ball> mBalls = new ArrayList<Ball>();
-    private final Paint mRedPaint;
-    private final Paint mGreenPaint;
-    private final Paint mBluePaint;
-    private final Paint mPurplePaint;
+    private final ArrayList<Ball> mAnimatingBalls = new ArrayList<Ball>();
+
+    /**
+     * Array of static balls on screen used for the clock. Balls will be cloned
+     * from this set when they are to begin animating. These balls are actually
+     * allocated once on initialization and merely change paints to adjust
+     * color. This completes the object oriented analogy that the demo is trying
+     * to convey.
+     * <p>
+     * This array includes the balls to draw the colon separating each set of
+     * digits.
+     */
+    private final ArrayList<Ball> mClockBalls = new ArrayList<Ball>();
+
+    /*
+     * Organization of each part of the clock in terms of the ball objects that
+     * are used to draw it. The purpose of this organization is to be able to
+     * conveniently determine which balls are being "turned off" when the digit
+     * changes so that they can be copied into the animating set and thus begin
+     * animating.
+     */
+    private final DigitSet mDayDigits;
+    private final DigitSet mHourDigits;
+    private final DigitSet mMinuteDigits;
+    private final DigitSet mSecondDigits;
+
     private final Paint mGrayPaint;
 
     private final int mBackgroundColor;
@@ -53,12 +66,6 @@ public class DrawThread extends Thread {
     private final float mBallMaxDeltaX;
     private final float mBallMinDeltaY;
     private final float mBallMaxDeltaY;
-
-    private final NumericSprite mNumericSprite;
-
-    /* Computed once to save time. */
-    private float mClockWidth;
-    private float mClockHeight;
 
     /**
      * True if we our surface is valid and we can draw; false otherwise.
@@ -86,14 +93,17 @@ public class DrawThread extends Thread {
      */
     private double mElapsed;
 
-    /*
-     * Record the previous times so that if they change we can animate the
+    /**
+     * Records the previous times so that if they change we can animate the
      * bouncing balls.
      */
-    private int mLastDay;
-    private int mLastHour;
-    private int mLastMinute;
-    private int mLastSecond;
+    private final CountdownClock mLastCountdown = new CountdownClock();
+
+    /**
+     * Convenient container for the current countdown (to compare with the last
+     * one).
+     */
+    private final CountdownClock mCurrentCountdown = new CountdownClock();
 
     public DrawThread(SurfaceHolder surfaceHolder, Context context) {
         mSurfaceHolder = surfaceHolder;
@@ -101,14 +111,20 @@ public class DrawThread extends Thread {
 
         Resources res = context.getResources();
 
-        mRedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        mRedPaint.setColor(res.getColor(R.color.red));
-        mGreenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        mGreenPaint.setColor(res.getColor(R.color.green));
-        mBluePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        mBluePaint.setColor(res.getColor(R.color.blue));
-        mPurplePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        mPurplePaint.setColor(res.getColor(R.color.purple));
+        Paint redPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        redPaint.setColor(res.getColor(R.color.red));
+        Paint greenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        greenPaint.setColor(res.getColor(R.color.green));
+        Paint bluePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        bluePaint.setColor(res.getColor(R.color.blue));
+        Paint purplePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        purplePaint.setColor(res.getColor(R.color.purple));
+
+        mDayDigits = new DigitSet(purplePaint);
+        mHourDigits = new DigitSet(bluePaint);
+        mMinuteDigits = new DigitSet(redPaint);
+        mSecondDigits = new DigitSet(greenPaint);
+
         mGrayPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         mGrayPaint.setColor(res.getColor(R.color.gray));
 
@@ -120,8 +136,6 @@ public class DrawThread extends Thread {
         mBallMaxDeltaX = res.getDimension(R.dimen.ballMaxDeltaX);
         mBallMinDeltaY = res.getDimension(R.dimen.ballMinDeltaY);
         mBallMaxDeltaY = res.getDimension(R.dimen.ballMaxDeltaY);
-
-        mNumericSprite = new NumericSprite();
     }
 
     public void setSurfaceSize(int width, int height) {
@@ -162,22 +176,18 @@ public class DrawThread extends Thread {
                 for (int posY = 0; posY < glyph.getHeight(); posY++) {
                     for (int posX = 0; posX < glyph.getWidth(); posX++) {
                         if (glyph.isLit(posX, posY)) {
-                            Ball ball = new Ball();
-                            ball.id = mNextBallId++;
-                            ball.x = x;
-                            ball.y = y;
+                            Ball ball = new Ball(x, y, mBallRadius);
                             ball.dx = randomFloatWithinRange(mBallMinDeltaX, mBallMaxDeltaX);
                             ball.dy = randomFloatWithinRange(mBallMinDeltaY, mBallMaxDeltaY);
-                            ball.radius = mBallRadius;
 
                             switch (sRandom.nextInt(4)) {
-                                case 0: ball.paint = mRedPaint; break;
-                                case 1: ball.paint = mGreenPaint; break;
-                                case 2: ball.paint = mBluePaint; break;
-                                case 3: ball.paint = mPurplePaint; break;
+                                case 0: ball.paint = mMinuteDigits.litPaint; break;
+                                case 1: ball.paint = mSecondDigits.litPaint; break;
+                                case 2: ball.paint = mHourDigits.litPaint; break;
+                                case 3: ball.paint = mDayDigits.litPaint; break;
                             }
 
-                            mBalls.add(ball);
+                            mAnimatingBalls.add(ball);
                         }
                         x += ballDiameter + mBallSpacing;
                     }
@@ -206,15 +216,17 @@ public class DrawThread extends Thread {
         drawBackground(canvas);
 
         long startTime = System.currentTimeMillis();
-        drawClock(canvas, startTime);
+        handleClock(canvas, startTime);
 
-        if (!mBalls.isEmpty()) {
+        if (!mAnimatingBalls.isEmpty()) {
             mElapsed = (startTime - mLastDraw) / 1000.0;
             if (mElapsed > 0) {
                 updatePhysics();
             }
-            drawBalls(canvas);
         }
+
+        drawBalls(canvas, mClockBalls);
+        drawBalls(canvas, mAnimatingBalls);
 
         mLastDraw = startTime;
     }
@@ -223,7 +235,36 @@ public class DrawThread extends Thread {
         canvas.drawColor(mBackgroundColor);
     }
 
-    private void drawClock(Canvas canvas, long now) {
+    private void createClockDigit(ArrayList<Ball> drawList, Ball[][] digit, float x, float y) {
+        /*
+         * Adjust for the fact that drawCircle draws at the center, but our
+         * API suggests that we draw at the upper-left bounding box.
+         */
+        x += mBallRadius;
+        y += mBallRadius;
+
+        float curX = x;
+        for (int posY = 0; posY < NumberFont.CONSTANT_HEIGHT; posY++) {
+            for (int posX = 0; posX < NumberFont.CONSTANT_WIDTH; posX++) {
+                Ball ball = new Ball(curX, y, mBallRadius, mGrayPaint);
+                drawList.add(ball);
+                digit[posX][posY] = ball;
+                curX += (mBallRadius * 2) + mBallSpacing;
+            }
+            y += (mBallRadius * 2) + mBallSpacing;
+            curX = x;
+        }
+    }
+
+    private void createClockColon(ArrayList<Ball> drawList, float x, float y) {
+        float colonTopY = y + (mBallRadius * 5f) + (mBallSpacing * 2f);
+        float colonBottomY = colonTopY + (mBallRadius * 4f) + (mBallSpacing * 2f);
+
+        drawList.add(new Ball(x, colonTopY, mBallRadius, mGrayPaint));
+        drawList.add(new Ball(x, colonBottomY, mBallRadius, mGrayPaint));
+    }
+
+    private void handleClock(Canvas canvas, long now) {
         long timeLeft;
         if (now >= Constants.COUNTDOWN_TO_WHEN) {
             Log.d(TAG, "Go to I/O, it's happening RIGHT NOW!");
@@ -232,47 +273,72 @@ public class DrawThread extends Thread {
             timeLeft = Constants.COUNTDOWN_TO_WHEN - now;
         }
 
-        timeLeft /= 1000;
-        int sec = (int)(timeLeft % 60);
-        timeLeft /= 60;
-        int min = (int)(timeLeft % 60);
-        timeLeft /= 60;
-        int hour = (int)(timeLeft % 24);
-        timeLeft /= 24;
-        int day = (int)timeLeft;
+        /* Initialize the positions of the static clock balls. */
+        if (mClockBalls.isEmpty()) {
+            float digitWidth = (mBallRadius * 2 * NumberFont.CONSTANT_WIDTH) +
+                    (mBallSpacing * (NumberFont.CONSTANT_WIDTH - 1));
+            float digitHeight = (mBallRadius * 2 * NumberFont.CONSTANT_HEIGHT) +
+                    (mBallSpacing * (NumberFont.CONSTANT_HEIGHT - 1));
 
-        if (mClockWidth == 0) {
-            mNumericSprite.setValue(0, 2);
-            mClockWidth = (mNumericSprite.width() * 4) + (mDigitSpacing * 6);
-            mClockHeight = mNumericSprite.height();
+            float clockWidth = (digitWidth * 8) + (mDigitSpacing * 10);
+            float clockHeight = digitHeight;
+
+            float x = (mCanvasWidth - clockWidth) / 2f;
+            float y = (mCanvasHeight - clockHeight) / 2f;
+
+            createClockDigit(mClockBalls, mDayDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
+            createClockDigit(mClockBalls, mDayDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
+            createClockColon(mClockBalls, x, y); x += mDigitSpacing;
+            createClockDigit(mClockBalls, mHourDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
+            createClockDigit(mClockBalls, mHourDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
+            createClockColon(mClockBalls, x, y); x += mDigitSpacing;
+            createClockDigit(mClockBalls, mMinuteDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
+            createClockDigit(mClockBalls, mMinuteDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
+            createClockColon(mClockBalls, x, y); x += mDigitSpacing;
+            createClockDigit(mClockBalls, mSecondDigits.bitmaps[0], x, y); x += digitWidth + mDigitSpacing;
+            createClockDigit(mClockBalls, mSecondDigits.bitmaps[1], x, y); x += digitWidth + mDigitSpacing;
         }
 
-        float x = (mCanvasWidth - mClockWidth) / 2f;
-        float y = (mCanvasHeight - mClockHeight) / 2f;
+        mCurrentCountdown.setTimeLeft(timeLeft);
 
-        float colonTopY = y + (mBallRadius * 5f) + (mBallSpacing * 2f);
-        float colonBottomY = colonTopY + (mBallRadius * 4f) + (mBallSpacing * 2f);
+        handleDigitChange(mDayDigits, mLastCountdown.days, mCurrentCountdown.days);
+        handleDigitChange(mHourDigits, mLastCountdown.hours, mCurrentCountdown.hours);
+        handleDigitChange(mMinuteDigits, mLastCountdown.minutes, mCurrentCountdown.minutes);
+        handleDigitChange(mSecondDigits, mLastCountdown.seconds, mCurrentCountdown.seconds);
 
-        mNumericSprite.setValue(day, 2);
-        mNumericSprite.draw(canvas, x, y, mPurplePaint);
-        x += mNumericSprite.width();
-        canvas.drawCircle(x + mDigitSpacing, colonTopY, mBallRadius, mGrayPaint);
-        canvas.drawCircle(x + mDigitSpacing, colonBottomY, mBallRadius, mGrayPaint);
-        x += mDigitSpacing * 2;
-        mNumericSprite.setValue(hour, 2);
-        mNumericSprite.draw(canvas, x, y, mBluePaint);
-        x += mNumericSprite.width();
-        canvas.drawCircle(x + mDigitSpacing, colonTopY, mBallRadius, mGrayPaint);
-        canvas.drawCircle(x + mDigitSpacing, colonBottomY, mBallRadius, mGrayPaint);
-        x += mDigitSpacing * 2;
-        mNumericSprite.setValue(min, 2);
-        mNumericSprite.draw(canvas, x, y, mRedPaint);
-        x += mNumericSprite.width();
-        canvas.drawCircle(x + mDigitSpacing, colonTopY, mBallRadius, mGrayPaint);
-        canvas.drawCircle(x + mDigitSpacing, colonBottomY, mBallRadius, mGrayPaint);
-        x += mDigitSpacing * 2;
-        mNumericSprite.setValue(sec, 2);
-        mNumericSprite.draw(canvas, x, y, mGreenPaint);
+        mLastCountdown.setTimeLeft(mCurrentCountdown);
+    }
+
+    private void handleDigitChange(DigitSet digitSet, int lastCount, int newCount) {
+        if (lastCount == newCount) {
+            return;
+        }
+        int numDigits = digitSet.getNumDigits();
+        int value = newCount;
+        while (numDigits-- > 0) {
+            int digitValue = value % 10;
+            Ball[][] digitBitmap = digitSet.bitmaps[numDigits];
+            Glyph glyph = NumberFont.sFont[digitValue];
+            for (int x = 0; x < NumberFont.CONSTANT_WIDTH; x++) {
+                for (int y = 0; y < NumberFont.CONSTANT_HEIGHT; y++) {
+                    Ball ball = digitBitmap[x][y];
+
+                    boolean shouldBeLit = glyph.isLit(x, y);
+                    boolean isLit = ball.paint != mGrayPaint;
+
+                    if (shouldBeLit != isLit) {
+                        if (isLit) {
+                            Ball anim = new Ball(ball.x, ball.y, ball.radius, ball.paint);
+                            anim.dx = randomFloatWithinRange(mBallMinDeltaX, mBallMaxDeltaX);
+                            anim.dy = randomFloatWithinRange(mBallMinDeltaY, mBallMaxDeltaY);
+                            mAnimatingBalls.add(anim);
+                        }
+                        ball.paint = shouldBeLit ? digitSet.litPaint : mGrayPaint;
+                    }
+                }
+            }
+            value /= 10;
+        }
     }
 
     private void updatePhysics() {
@@ -295,9 +361,9 @@ public class DrawThread extends Thread {
             verticalForce = (float)(PHYS_Y_ACCEL_SEC * mElapsed);
         }
 
-        int N = mBalls.size();
+        int N = mAnimatingBalls.size();
         for (int i = 0; i < N; i++) {
-            Ball ball = mBalls.get(i);
+            Ball ball = mAnimatingBalls.get(i);
 
             /* Apply the device pitch (as an accelerating force). */
             float dx = ball.dx + horizontalForce;
@@ -320,7 +386,7 @@ public class DrawThread extends Thread {
 
             /* Prune. */
             if (ball.x < 0 || ball.x > mCanvasWidth) {
-                mBalls.remove(i);
+                mAnimatingBalls.remove(i);
                 N--;
             } else {
 //                /* Check for a hit (XXX: this algorithm is n^2). */
@@ -339,24 +405,30 @@ public class DrawThread extends Thread {
         }
     }
 
-    private void drawBalls(Canvas canvas) {
-        int N = mBalls.size();
+    private void drawBalls(Canvas canvas, ArrayList<Ball> balls) {
+        int N = balls.size();
         for (int i = 0; i < N; i++) {
-            Ball ball = mBalls.get(i);
+            Ball ball = balls.get(i);
             canvas.drawCircle(ball.x, ball.y, ball.radius, ball.paint);
-            if (DEBUG_DRAW_BALL_ID) {
-                canvas.drawText(String.valueOf(ball.id), ball.x + ball.radius, ball.y - ball.radius,
-                        ball.paint);
-            }
         }
     }
 
     private static class Ball {
-        public int id;
         public float x, y;
         public float dx, dy;
         public float radius;
         public Paint paint;
+
+        public Ball(float x, float y, float radius) {
+            this(x, y, radius, null);
+        }
+
+        public Ball(float x, float y, float radius, Paint paint) {
+            this.x = x;
+            this.y = y;
+            this.radius = radius;
+            this.paint = paint;
+        }
 
         public boolean intersects(Ball ball) {
             //Initialize the return value *t = 0.0f;
@@ -386,77 +458,52 @@ public class DrawThread extends Thread {
 
         @Override
         public String toString() {
-            return "{id=" + id + "; pos=(" + x + "," + y + "); delta=(" + dx + "," + dy +")}";
+            return "{pos=(" + x + "," + y + "); delta=(" + dx + "," + dy +")}";
         }
     }
 
-    private class NumericSprite {
-        private int mValue;
-        private int mDigits;
+    private static class CountdownClock {
+        public int days;
+        public int hours;
+        public int minutes;
+        public int seconds;
 
-        public void setValue(int value, int digits) {
-            mValue = value;
-            mDigits = digits;
+        public void setTimeLeft(long timeLeft) {
+            timeLeft /= 1000;
+            seconds = (int)(timeLeft % 60);
+            timeLeft /= 60;
+            minutes = (int)(timeLeft % 60);
+            timeLeft /= 60;
+            hours = (int)(timeLeft % 24);
+            timeLeft /= 24;
+            days = (int)timeLeft;
         }
 
-        private float distanceBetweenBalls() {
-            return (mBallRadius * 2) + mBallSpacing;
+        public void setTimeLeft(CountdownClock source) {
+            days = source.days;
+            hours = source.hours;
+            minutes = source.minutes;
+            seconds = source.seconds;
+        }
+    }
+
+    private static class DigitSet {
+        /**
+         * Bitmap of balls for each digit in the set.
+         */
+        public final Ball[][][] bitmaps = new Ball[2][NumberFont.CONSTANT_WIDTH][NumberFont.CONSTANT_HEIGHT];
+
+        /**
+         * Paint to use when the ball is "lit" (not gray).
+         */
+        public final Paint litPaint;
+
+        public DigitSet(Paint litPaint) {
+            this.litPaint = litPaint;
         }
 
-        private float digitWidth() {
-            return (distanceBetweenBalls() * NumberFont.CONSTANT_WIDTH) - mBallSpacing;
-        }
-
-        private float digitWidthPlusSpacing() {
-            return digitWidth() + mDigitSpacing;
-        }
-
-        public void draw(Canvas canvas, float x, float y, Paint paint) {
-            /*
-             * We draw right to left, so lets advance the x position
-             * accordingly.
-             */
-            x += width() - digitWidth();
-            int value = mValue;
-            int digits = mDigits;
-            while (digits-- > 0) {
-                int digit = value % 10;
-                drawDigit(canvas, x, y, digit, paint);
-                value /= 10;
-                x -= digitWidthPlusSpacing();
-            }
-        }
-
-        private void drawDigit(Canvas canvas, float x, float y, int digit, Paint paint) {
-            /*
-             * Adjust for the fact that drawCircle draws at the center, but our
-             * API suggests that we draw at the upper-left bounding box.
-             */
-            x += mBallRadius;
-            y += mBallRadius;
-
-            float curX = x;
-            Glyph glyph = NumberFont.sFont[digit];
-            for (int posY = 0; posY < glyph.getHeight(); posY++) {
-                for (int posX = 0; posX < glyph.getWidth(); posX++) {
-                    if (glyph.isLit(posX, posY)) {
-                        canvas.drawCircle(curX, y, mBallRadius, paint);
-                    } else {
-                        canvas.drawCircle(curX, y, mBallRadius, mGrayPaint);
-                    }
-                    curX += distanceBetweenBalls();
-                }
-                y += distanceBetweenBalls();
-                curX = x;
-            }
-        }
-
-        public float width() {
-            return (digitWidthPlusSpacing() * mDigits) - mDigitSpacing;
-        }
-
-        public float height() {
-            return (distanceBetweenBalls() * NumberFont.CONSTANT_HEIGHT) - mBallSpacing;
+        public int getNumDigits() {
+            return bitmaps.length;
         }
     }
 }
