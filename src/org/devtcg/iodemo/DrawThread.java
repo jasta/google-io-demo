@@ -385,9 +385,11 @@ public class DrawThread extends Thread {
             /* Apply vertical acceleration. */
             float dy = ball.dy + verticalForce;
             float posy = ball.y + dy;
-            if (posy > mCanvasHeight && dy > 0) {
-                if (dy < PHYS_MIN_Y_ACCEL_AT_BOTTOM) {
+            if ((posy > mCanvasHeight && dy > 0) || (posy < 0 && dy < 0)) {
+                if (dy > 0 && dy < PHYS_MIN_Y_ACCEL_AT_BOTTOM) {
                     dy = PHYS_MIN_Y_ACCEL_AT_BOTTOM;
+                } if (dy < 0 && dy > -PHYS_MIN_Y_ACCEL_AT_BOTTOM) {
+                    dy = -PHYS_MIN_Y_ACCEL_AT_BOTTOM;
                 }
                 dy *= -PHYS_Y_FRICTION_SORT_OF;
             }
