@@ -10,7 +10,7 @@ public class Constants {
 
     static {
         Calendar calendar = Calendar.getInstance(TimeZone.getTimeZone("America/Los_Angeles"));
-        calendar.set(2011, Calendar.MAY, 10, 7, 0);
+        calendar.set(2011, Calendar.MAY, 10, 9, 0);
         COUNTDOWN_TO_WHEN = calendar.getTimeInMillis();
     }
 }
