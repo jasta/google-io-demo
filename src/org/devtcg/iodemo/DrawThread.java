@@ -402,18 +402,16 @@ public class DrawThread extends Thread {
                 mAnimatingBalls.remove(i);
                 N--;
             } else {
-//                /* Check for a hit (XXX: this algorithm is n^2). */
-//                for (int j = 0; j < N; j++) {
-//                    Ball otherBall = mBalls.get(j);
-//                    if (otherBall.intersects(ball)) {
-//                        Log.d(TAG, "HIT!");
-//                        Log.d(TAG, "ball1=" + ball);
-//                        Log.d(TAG, "ball2=" + otherBall);
-//                        mBalls.remove(i);
-//                        N--;
-//                        break;
-//                    }
-//                }
+                /* Check for a hit (XXX: this algorithm is n^2). */
+                for (int j = 0; j < N; j++) {
+                    if (i == j) {
+                        continue;
+                    }
+                    Ball otherBall = mAnimatingBalls.get(j);
+                    if (otherBall.intersects(ball)) {
+                        /* ... */
+                    }
+                }
             }
         }
     }
@@ -443,35 +441,49 @@ public class DrawThread extends Thread {
             this.paint = paint;
         }
 
+        /**
+         * Somewhat sophisticated intersection test that takes into account
+         * object velocity to avoid missing detection when the objects would
+         * intersect at interpolated values between now and the next frame.
+         */
         public boolean intersects(Ball ball) {
-            //Initialize the return value *t = 0.0f;
             float dvx = ball.dx - dx;
             float dvy = ball.dy - dy;
             float dpx = ball.x - x;
             float dpy = ball.y - y;
             float r = ball.radius + radius;
-            //dP^2-r^2
-            float pp = dpx * dpx + dpy * dpy - r*r;
-            //(1)Check if the spheres are already intersecting
-            if ( pp < 0 ) return true;
-            //dP*dV
+
+            /* Fail fast: check if they intersect now. */
+            float pp = dpx * dpx + dpy * dpy - r * r;
+            if (pp < 0) {
+                return true;
+            }
+
+            /* Fail fast: check if they are moving away from each other. */
             float pv = dpx * dvx + dpy * dvy;
-            //(2)Check if the spheres are moving away from each other
-            if ( pv >= 0 ) return false;
-            //dV^2
+            if (pv >= 0) {
+                return false;
+            }
+
             float vv = dvx * dvx + dvy * dvy;
-            //(3)Check if the spheres can intersect within 1 frame
-            if ( (pv + vv) <= 0 && (vv + 2 * pv + pp) >= 0 ) return false;
-            //tmin = -dP*dV/dV*2
-            //the time when the distance between the spheres is minimal
-            float tmin = -pv/vv;
-            //Discriminant/(4*dV^2) = -(dp^2-r^2+dP*dV*tmin)
-            return ( pp + pv * tmin > 0 );
+
+            /*
+             * Check if the spheres can intersect within a normal frame of
+             * animation (this doesn't apply acceleration and is kind of broken
+             * for that reason).  Oh well, no one will notice :)
+             */
+            if ((pv + vv) <= 0 && (vv + 2 * pv + pp) >= 0) {
+                return false;
+            }
+
+            float D = pv * pv - pp * vv;
+            return D > 0;
         }
 
         @Override
         public String toString() {
-            return "{pos=(" + x + "," + y + "); delta=(" + dx + "," + dy +")}";
+            return String.format("{pos=(%.02f,%.02f); delta=(%.02f,%.02f); radius=%.01f}",
+                    x, y, dx, dy, radius);
         }
     }
 
