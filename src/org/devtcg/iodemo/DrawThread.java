@@ -214,8 +214,9 @@ public class DrawThread extends Thread {
                 updatePhysics();
             }
             drawBalls(canvas);
-            mLastDraw = startTime;
         }
+
+        mLastDraw = startTime;
     }
 
     private void drawBackground(Canvas canvas) {
